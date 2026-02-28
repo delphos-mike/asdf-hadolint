@@ -14,7 +14,7 @@ fail() {
 
 curl_opts=(-fsSL)
 
-# NOTE: You might want to remove this if actionlint is not hosted on GitHub releases.
+# NOTE: You might want to remove this if hadolint is not hosted on GitHub releases.
 if [ -n "${GITHUB_API_TOKEN:-}" ]; then
   curl_opts=("${curl_opts[@]}" -H "Authorization: token $GITHUB_API_TOKEN")
 fi
@@ -31,7 +31,6 @@ list_github_tags() {
 }
 
 list_all_versions() {
-  # Change this function if actionlint has other means of determining installable versions.
   list_github_tags
 }
 
@@ -93,7 +92,7 @@ download_release() {
 verify() {
   # Returns 1 on checksum error.
   local -r version="$1"
-  local -r platform="$(get_platform)"
+  local -r platform="$(get_platform "$version")"
   local -r arch="$(get_arch)"
   local -r checksum_path="${ASDF_DOWNLOAD_PATH}/$(get_checksum_filename "${version}")"
 
@@ -112,12 +111,32 @@ verify() {
   fi
 }
 
+# hadolint >= 2.13 changed release naming from Darwin/Linux to macos/linux.
+# Compare versions to decide which naming scheme to use.
+version_gte() {
+  # Returns 0 (true) if $1 >= $2 using semver comparison.
+  printf '%s\n%s' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n -C
+}
+
 get_platform() {
+  local version="${1:-}"
   local -r kernel="$(uname -s)"
   if [[ $OSTYPE == "msys" || $kernel == "CYGWIN"* || $kernel == "MINGW"* ]]; then
     echo windows
+  elif [[ $kernel == "Darwin" ]]; then
+    if [[ -n "$version" ]] && version_gte "$version" "2.13.0"; then
+      echo macos
+    else
+      echo Darwin
+    fi
+  elif [[ $kernel == "Linux" ]]; then
+    if [[ -n "$version" ]] && version_gte "$version" "2.13.0"; then
+      echo linux
+    else
+      echo Linux
+    fi
   else
-    uname
+    fail "Unsupported platform: ${kernel}"
   fi
 }
 
@@ -133,14 +152,13 @@ get_arch() {
   elif [[ $machine == *"386"* ]]; then
     echo "386"
   else
-    # echo "amd64"
     echo "x86_64"
   fi
 }
 
 get_tarball_filename() {
   local -r version="$1"
-  local -r platform="$(get_platform)"
+  local -r platform="$(get_platform "$version")"
   local -r arch="$(get_arch)"
   echo "${TOOL_NAME}_${version}_${platform}_${arch}.tar.gz"
 }
@@ -152,7 +170,7 @@ get_checksum_filename() {
 
 get_bin_name() {
   local -r version="$1"
-  local -r platform="$(get_platform)"
+  local -r platform="$(get_platform "$version")"
   local -r arch="$(get_arch)"
   echo "${TOOL_NAME}-${platform}-${arch}"
 }
